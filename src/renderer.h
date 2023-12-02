@@ -6,6 +6,8 @@
 #include "SDL.h"
 #include "snake.h"
 #include <memory>
+#include <future> // For std::promise and std::future
+#include <thread> // For std::thread
 #include "Obstacles.h"
 #include "Boosters.h"
 
@@ -49,6 +51,9 @@ private:
   const std::size_t screen_height;
   const std::size_t grid_width;
   const std::size_t grid_height;
+
+  // Method to handle async rendering
+  void AsyncRender(std::promise<void> &&renderCompletedPromise, Snake const snake, SDL_Point const &food);
 };
 
 #endif
