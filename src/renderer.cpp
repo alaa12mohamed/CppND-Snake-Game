@@ -45,6 +45,19 @@ Renderer::Renderer(const std::size_t screen_width,
   boosterTexture = SDL_CreateTextureFromSurface(sdl_renderer, boosterSurface);
 }
 
+
+// Async rendering method
+void Renderer::AsyncRender(std::promise<void> &&renderCompletedPromise, Snake const snake, SDL_Point const &food) {
+  // Rendering operations (simplified for this example)
+  
+  // Using async for rendering
+  std::promise<void> renderPromise;
+  auto renderFuture = renderPromise.get_future();
+  std::async(std::launch::async, &Renderer::AsyncRender, this, std::move(renderPromise), snake, food);
+  renderFuture.wait(); // Wait for async task to complete
+
+  renderCompletedPromise.set_value(); // Indicate completion
+}
 Renderer::~Renderer()
 {
   SDL_DestroyWindow(sdl_window);
