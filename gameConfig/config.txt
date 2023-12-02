@@ -1,0 +1,2 @@
+numberOfBoosters 10
+numberOfObstacles 10
