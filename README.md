@@ -45,3 +45,5 @@ This is the final Capstone project of the [Udacity C++ Nanodegree Program](https
 8. The project makes use of references in function declarations.
 9. The project uses move semantics to move data, instead of copying it, where possible.
 10. The project uses smart pointers instead of raw pointers.
+11. I utilized std::async to render obstacles and boosters asynchronously, enhancing the efficiency of the rendering process.
+12. std::mutex and std::lock_guard have been employed to protect shared data structures (Obstacles and Boosters) from potential data races during multithreaded execution.
