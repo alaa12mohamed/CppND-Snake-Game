@@ -1,7 +1,11 @@
 #include "renderer.h"
 #include <iostream>
 #include <string>
-#include <mutex> // Added for std::mutex and std::lock_guard
+#include <SDL_thread.h>
+#include <mutex>
+#include "SDL.h"
+#include "Boosters.h"
+#include "Obstacles.h"
 
 Renderer::Renderer(const std::size_t screen_width,
                    const std::size_t screen_height,
@@ -9,7 +13,15 @@ Renderer::Renderer(const std::size_t screen_width,
     : screen_width(screen_width),
       screen_height(screen_height),
       grid_width(grid_width),
-      grid_height(grid_height)
+      grid_height(grid_height),
+      obstacleSurface(nullptr),
+      obstacleTexture(nullptr),
+      boosterSurface(nullptr),
+      boosterTexture(nullptr),
+      obstacleSurfaceAsync(nullptr),
+      obstacleTextureAsync(nullptr),
+      boosterSurfaceAsync(nullptr),
+      boosterTextureAsync(nullptr)
 {
   // Initialize SDL
   if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -37,27 +49,11 @@ Renderer::Renderer(const std::size_t screen_width,
     std::cerr << "SDL_Error: " << SDL_GetError() << "\n";
   }
 
-  // Creating Obstacle Texture
-  obstacleSurface = SDL_LoadBMP("../assets/unlit-bomb.bmp");
-  obstacleTexture = SDL_CreateTextureFromSurface(sdl_renderer, obstacleSurface);
-
-  boosterSurface = SDL_LoadBMP("../assets/rocket.bmp");
-  boosterTexture = SDL_CreateTextureFromSurface(sdl_renderer, boosterSurface);
+  // Start the asynchronous texture loading thread
+  std::thread textureLoadingThread(&Renderer::LoadTexturesAsync, this);
+  textureLoadingThread.detach(); // Detach the thread since it will run independently
 }
 
-
-// Async rendering method
-void Renderer::AsyncRender(std::promise<void> &&renderCompletedPromise, Snake const snake, SDL_Point const &food) {
-  // Rendering operations (simplified for this example)
-  
-  // Using async for rendering
-  std::promise<void> renderPromise;
-  auto renderFuture = renderPromise.get_future();
-  std::async(std::launch::async, &Renderer::AsyncRender, this, std::move(renderPromise), snake, food);
-  renderFuture.wait(); // Wait for async task to complete
-
-  renderCompletedPromise.set_value(); // Indicate completion
-}
 Renderer::~Renderer()
 {
   SDL_DestroyWindow(sdl_window);
@@ -69,16 +65,15 @@ void Renderer::Render(Snake const snake,
                       const std::shared_ptr<Obstacles> obstacles,
                       const std::shared_ptr<Boosters> boosters)
 {
-  SDL_Rect block;
-  block.w = screen_width / grid_width;
-  block.h = screen_height / grid_height;
-
   // Clear screen
   SDL_SetRenderDrawColor(sdl_renderer, 0x1E, 0x1E, 0x1E, 0xFF);
   SDL_RenderClear(sdl_renderer);
 
   // Render food
   SDL_SetRenderDrawColor(sdl_renderer, 0xFF, 0xCC, 0x00, 0xFF);
+  SDL_Rect block;
+  block.w = screen_width / grid_width;
+  block.h = screen_height / grid_height;
   block.x = food.x * block.w;
   block.y = food.y * block.h;
   SDL_RenderFillRect(sdl_renderer, &block);
@@ -121,11 +116,35 @@ void Renderer::UpdateWindowTitle(int score, int fps)
   SDL_SetWindowTitle(sdl_window, title.c_str());
 }
 
+void Renderer::LoadTexturesAsync()
+{
+  AsyncRender([this]() {
+        // Creating Obstacle Texture
+        obstacleSurfaceAsync = SDL_LoadBMP("../assets/unlit-bomb.bmp");
+        obstacleTextureAsync = SDL_CreateTextureFromSurface(sdl_renderer, obstacleSurface);
+
+        boosterSurfaceAsync = SDL_LoadBMP("../assets/rocket.bmp");
+        boosterTextureAsync = SDL_CreateTextureFromSurface(sdl_renderer, boosterSurface);
+
+        // Notify that textures have been loaded
+        UpdateTextures();
+    });
+}
+
+void Renderer::UpdateTextures()
+{
+  // Update the member variables in a thread-safe manner
+  {
+    std::lock_guard<std::mutex> lock(textureMutex);
+    obstacleSurface = obstacleSurfaceAsync;
+    obstacleTexture = obstacleTextureAsync;
+    boosterSurface = boosterSurfaceAsync;
+    boosterTexture = boosterTextureAsync;
+  }
+}
+
 void Renderer::placeObstacles(const std::shared_ptr<Obstacles> obstacles) const
 {
-  // Lock the mutex for obstacles
-  std::lock_guard<std::mutex> lock(obstaclesMutex);
-
   for (const Coordinate &coordinate : obstacles->getCoordinates())
   {
     // Rect which will be hosting the obstacle.
@@ -136,15 +155,15 @@ void Renderer::placeObstacles(const std::shared_ptr<Obstacles> obstacles) const
     obstacleRect.y = coordinate.getYCoordinate() * obstacleRect.h;
 
     // Render the obstacles
-    SDL_RenderCopy(sdl_renderer, obstacleTexture, NULL, &obstacleRect);
+    {
+      std::lock_guard<std::mutex> lock(textureMutex);
+      SDL_RenderCopy(sdl_renderer, obstacleTexture, NULL, &obstacleRect);
+    }
   }
 }
 
 void Renderer::placeBoosters(const std::shared_ptr<Boosters> boosters) const
 {
-  // Lock the mutex for boosters
-  std::lock_guard<std::mutex> lock(boostersMutex);
-
   for (const Coordinate &coordinate : boosters->getCoordinates())
   {
     // Rect which will be hosting the booster
@@ -155,6 +174,9 @@ void Renderer::placeBoosters(const std::shared_ptr<Boosters> boosters) const
     obstacleRect.y = coordinate.getYCoordinate() * obstacleRect.h;
 
     // Render the obstacles
-    SDL_RenderCopy(sdl_renderer, boosterTexture, NULL, &obstacleRect);
+    {
+      std::lock_guard<std::mutex> lock(textureMutex);
+      SDL_RenderCopy(sdl_renderer, boosterTexture, NULL, &obstacleRect);
+    }
   }
 }
